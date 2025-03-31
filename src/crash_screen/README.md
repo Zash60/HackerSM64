@@ -105,7 +105,12 @@ TODO: more/update documentation
     - Can it be DMAd to a framebuffer? The crash screen works double buffered.
   - Simplified crash screen (for HLE? or if DMA fails?).
   - Ifdef the entire crash screen?
-- RSP crash screen (see libdragon).
+- Find a way to handle these crashes:
+  - RCP (RSP/RDP)
+    - See how libdragon does it
+      - Special breaks in microcode?.
+  - Before `setup_game_memory`
+  - Before `create_crash_screen_thread`
 - Finish and clean up exception macros in `asm.h`.
 - Move all inline asm stuff (eg. math_util.h) to `asm.h`/`asm.c`?
 - Clean up `INCLUDE_DEBUG_MAP` ifdefs as much as possible.
@@ -125,7 +130,8 @@ TODO: more/update documentation
 - Is the stuff with `$(CRASH_TEXTURE_C_FILES)` in the makefile necessary?
 - On a crash screen crash, should the new crash screen automatically return to the previous position debugging the crashed game thread instead of inspecting the first crash screen thread?
 - Draw multiple pixels at a time (eg. RGBA16FILL).
-- Makefile rule or config define (possible?) for whether to include non-virtual symbols
+  - Would this be faster? Current method is slower.
+- Makefile rule or config define (possible?) for whether to include segmented symbols
   - eg. behavior and displaylist names
 - "...ID" vs. "...Id" naming discrepancy
 - Show data preview in address select (same as reginspect).
@@ -134,20 +140,40 @@ TODO: more/update documentation
 - Should cs_print/cs_draw be in util folder?
 - Move print specific stuff out of util files.
 - Include `os_convert.h` in crash_main.h and move the framerate defines/macros to it.
-#### UNF
-- Update UNF to match pages.
+#### Input/controls
+- Initialize controllers if the game hasn't done so already.
+  - Crash may happen before/during controller initialization.
+  - Will need updating after input PR.
+- If crash was on the same frame controllers initialize, controller inputs read 0xFFFFFFFF which reads as every button pressed at once. Is there a way to make sure the controller was initialized before reading inputs?
+#### UNF/USB
+- Update UNF.
+- Update UNF prints to match pages.
 - Better UNF print combo?
 - Combine cs_print and unf print layout funcs.
 - Find out why UNF print is constantly desyncing (not crash screen related).
+- RDB/GDB support
 #### Crash screen crashes
 - On a crash screen crash, disable specific components instead of the whole page
   Especially on the Summary page
 - The next crash screen checks for timeout of prev (handle infinite loop crashes).
 #### Rendering
-- **Fix the flickering on Ares (and some other emulators) if possible.**
-- Does double framebuffer mode have any input lag?
+- **Fix the flickering on Ares (and some other emulators?) if possible.**
+  - Caused by double framebuffering.
+  - Ares also has issues with coverage when VI divot is on.
+- Fix middle horizontal line of "4", "5", and "A" in font to be consistent with other chars.
 #### Debug map
-
+- This uses up a lot of the rom and ram, can this be compressed/reduced?
+  - Can the strings be packed somehow?
+    - chars: `[\0][0-9][A-Z][a-z][_][.]`
+    - 65 total, one char needs to be removed to fit each char into 6 bits.
+    - Will `_` always be before `.`? Can those be combined to the same entry with something that determines where it switches?
+    - Some data currently in strings can be moved to MapSymbol struct
+      - Index where `_` becomes `.`
+      - Suffix type and number (`.constprop`/etc.)
+      - Byte offset and bit offset and string length so that null chars can be removed
+      - Ideally should still fit under 0x10 bytes if possible.
+- Sort symbols by the lower 24 bits instead of full (sometimes the first byte is a segment number).
+- Determine segment/linker data type from map data?
 #### Asserts
 - Should assert macros be uppercase or lowercase?
 - More special crash/assert handling:
@@ -163,6 +189,7 @@ TODO: more/update documentation
     - Crashed page number and name
     - Selection cursor location
 - More asserts for common crashes
+  - `patch_audio_bank`
   - `geo_process_animated_part`
   - `geo_process_node_and_siblings`
   - NULL Mario floor
@@ -183,14 +210,17 @@ TODO: more/update documentation
 - Finalize layout.
 - If `pc` is invalid, use the next function in the stack.
 - Check for f64 denorms/NaN.
-- "Likely NULL pointer dereference" if badvaddr is not actually 0 but still < 128
-	Check disasm registers for NULL sureAddress to make sure it's a NULL pointer for more accuracy
+- "Likely NULL pointer dereference" if badvaddr is not actually 0 but still < 128.
+	- Check disasm registers for NULL sureAddr to make sure it's a NULL pointer for more accuracy (in case of accessing data through a NULL struct).
 - Skip printing duplicate saved registers.
 - Show register data as ASCII.
 ### Stack trace page
-- Use Libdragon's better stack trace functionality.
+- Handle frame pointers and variable stack sizes.
+- Should stack trace page also have a thread select?
+- Failsafe in case __osCleanupThread doesn't appear in the stack.
+- Print error if stack buffer was exceeded.
 - Can stack trace be printed without a buffer?
-- Make it clearer that the stack is thread-specific (show thread name on page?)
+- Is the "stack address" entry in stack buffer still needed?
 ### Thread Registers page
 - Extended version with a scrollable list of all registers and their full 64 bit contents (Everything from [here](https://n64.readthedocs.io/index.html) plus any other CPU/RCP registers). Thread registers on top (old context page) then all registers if scroll down.
 #### Threads
@@ -229,22 +259,26 @@ TODO: more/update documentation
 - Show register data as ASCII.
 ### Disasm page
 - **Fix cursor passing the bottom of the screen when inline symbol headers are on.**
+- Combine disasm and pseudoC functionality.
+  - Symbolize insns first.
 - Show addresses for each row (setting).
   - How can branch arrows fit?
 - Multi-line pseudoinstructions if possible (ABS, BLT, BGT, BLE, NEG, NEGU, NOT, BGE, LI, LA, SGE, SGE, ADD?).
-- Can the `insn_as_string` and `insn_name` buffers be combined?
 - Implement "OVERSCAN" mode for branch arrows.
-- Translucent dividers at the end of symbols (already at beginning).
 - Can the bootleg "multithreading" for branch arrows be removed now that there is no longer lag with binary symbol searching?
 - Reset branch arrow distance when it won't overlap instead of wrapping only after the distance reaches the end of the screen.
 - Save register data types in the register buffer?
 - Detect which segments are currently loaded to prevent trying to disasm garbage data (eg. reading from menu segment during normal gameplay).
   - Entry in text segment address range array?
-- Print unknowns as binary should work on unimpl too.
-- Automatically detect symbol change to reset/refill branch arrows?
+- Print unknowns as binary should work on "unimpl" entries too.
 - Segment name to the right of range at the top?
 - Show offset/total of symbol.
 - Non-symbol in .text segment and `NOP` prints "function alignment".
+- Mark delay slots.
+- In pseudoC, combine `FP = cond` and the nop and the `if (FP)` lines into one `if (cond)` line
+  - Leave the extra space?
+- Scroll comments (both disasm and pseudoC).
+- Better printing for `cache` instruction operations.
 ### Memory view page
 - Press and hold to select multiple bytes?
 - Is search functionality possible/reasonable?
@@ -254,13 +288,14 @@ TODO: more/update documentation
 - Move segments page to be a submenu of this page.
 - Show offset/total of symbol.
 - Non-symbol in .text segment and `NOP` prints "function alignment".
+- Highlight `$WatchLo` address location.
 ### Map view page
 - Should moving the cursor location here also change the location in ram view and disasm?
 - Jumping to an address that's not in a symbol should find the nearest symbol index and jump to there.
 - Is search functionality possible/reasonable?
 - Describe "type" char.
-- Determine segment/linker data type from map data?
 - Is search functionality possible/reasonable?
+- Equivalent of reginspect for symbols.
 ### Segments page
 - Show both rom and ram size? (for compressed data)
 - Show hardcoded segments:
