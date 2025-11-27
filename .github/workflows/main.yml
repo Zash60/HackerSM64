@@ -20,24 +20,35 @@ jobs:
           openssl aes-256-cbc -pbkdf2 -d -in baserom.us.enc -out baserom.us.z64 -k "${{ secrets.ROM_PASSWORD }}"
           openssl aes-256-cbc -pbkdf2 -d -in baserom.jp.enc -out baserom.jp.z64 -k "${{ secrets.ROM_PASSWORD }}"
 
-      - name: Corrigir Bibliotecas e Ferramentas
+      - name: Compilação Blindada (Fix Libultra & Libgcc)
         run: |
-          # 1. Apagar libultra antiga para forçar recompilação do zero
-          rm -f lib/n64/libultra_rom.a
-          
-          # 2. A MÁGICA: Pegar a libgcc nova do sistema e colocar no lugar da velha
-          # O comando abaixo pergunta pro compilador onde está a libgcc certa e copia ela
+          # 1. Substituir a libgcc incompatível pela do sistema (igual antes)
           SYSTEM_LIBGCC=$(mips-linux-gnu-gcc -print-libgcc-file-name)
-          echo "Substituindo libgcc antiga pela do sistema: $SYSTEM_LIBGCC"
           cp "$SYSTEM_LIBGCC" lib/gcclib/divbreak/libgcc.a
 
-          # 3. Arrumar o Linker (ld) como fizemos antes
+          # 2. Arrumar o Linker
           rm -f tools/mips64-elf-ld
           ln -s /usr/bin/mips-linux-gnu-ld tools/mips64-elf-ld
 
-      - name: Compilar
-        run: |
-          # Limpar compilações antigas para evitar confusão
-          make clean
-          # Compilar
+          # 3. Remover a libultra velha que causa erro
+          rm -f lib/n64/libultra_rom.a
+
+          # 4. Primeira tentativa de compilação (Vai falhar no final, mas vai gerar a lib nova)
+          echo "Compilando objetos... (Ignorando erro de linkagem por enquanto)"
+          make -j$(nproc) || true
+
+          # 5. O PULO DO GATO: Achar a lib nova gerada e copiar para o lugar certo
+          echo "Procurando a nova libultra_rom.a gerada..."
+          NEW_LIB=$(find build -name "libultra_rom.a" | head -n 1)
+          
+          if [ -f "$NEW_LIB" ]; then
+            echo "Encontrada em: $NEW_LIB. Copiando para lib/n64/..."
+            cp "$NEW_LIB" lib/n64/libultra_rom.a
+          else
+            echo "ERRO: A biblioteca não foi gerada. Verifique os logs acima."
+            exit 1
+          fi
+
+          # 6. Compilação Final (Agora vai funcionar pois o arquivo existe)
+          echo "Finalizando compilação..."
           make -j$(nproc)
