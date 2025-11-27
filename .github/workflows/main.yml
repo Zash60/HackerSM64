@@ -1,0 +1,36 @@
+name: Compilar HackerSM64
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Dependências
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git binutils-mips-linux-gnu gcc-mips-linux-gnu python3 python3-pip pkg-config zlib1g-dev libaudiofile-dev
+          pip3 install pypng bitstring
+
+      - name: Descriptografar ROMs
+        run: |
+          openssl aes-256-cbc -pbkdf2 -d -in baserom.us.enc -out baserom.us.z64 -k "${{ secrets.ROM_PASSWORD }}"
+          openssl aes-256-cbc -pbkdf2 -d -in baserom.jp.enc -out baserom.jp.z64 -k "${{ secrets.ROM_PASSWORD }}"
+
+      - name: Corrigir Ferramentas
+        run: |
+          rm -f lib/n64/libultra_rom.a
+          rm -f tools/mips64-elf-ld
+          ln -s /usr/bin/mips-linux-gnu-ld tools/mips64-elf-ld
+
+      - name: Compilar
+        run: make -j$(nproc)
+
+      - name: Upload do Jogo
+        uses: actions/upload-artifact@v4
+        with:
+          name: HackerSM64-ROM
+          path: build/us_n64/sm64.us.z64
