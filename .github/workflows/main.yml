@@ -20,17 +20,24 @@ jobs:
           openssl aes-256-cbc -pbkdf2 -d -in baserom.us.enc -out baserom.us.z64 -k "${{ secrets.ROM_PASSWORD }}"
           openssl aes-256-cbc -pbkdf2 -d -in baserom.jp.enc -out baserom.jp.z64 -k "${{ secrets.ROM_PASSWORD }}"
 
-      - name: Corrigir Ferramentas
+      - name: Corrigir Bibliotecas e Ferramentas
         run: |
+          # 1. Apagar libultra antiga para forçar recompilação do zero
           rm -f lib/n64/libultra_rom.a
+          
+          # 2. A MÁGICA: Pegar a libgcc nova do sistema e colocar no lugar da velha
+          # O comando abaixo pergunta pro compilador onde está a libgcc certa e copia ela
+          SYSTEM_LIBGCC=$(mips-linux-gnu-gcc -print-libgcc-file-name)
+          echo "Substituindo libgcc antiga pela do sistema: $SYSTEM_LIBGCC"
+          cp "$SYSTEM_LIBGCC" lib/gcclib/divbreak/libgcc.a
+
+          # 3. Arrumar o Linker (ld) como fizemos antes
           rm -f tools/mips64-elf-ld
           ln -s /usr/bin/mips-linux-gnu-ld tools/mips64-elf-ld
 
       - name: Compilar
-        run: make -j$(nproc)
-
-      - name: Upload do Jogo
-        uses: actions/upload-artifact@v4
-        with:
-          name: HackerSM64-ROM
-          path: build/us_n64/sm64.us.z64
+        run: |
+          # Limpar compilações antigas para evitar confusão
+          make clean
+          # Compilar
+          make -j$(nproc)
